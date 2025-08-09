@@ -41,7 +41,7 @@ fi
 
 # 3. Teste de autenticação
 echo "3. 🔍 Testando autenticação..."
-PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "SELECT current_user, version();" 2>/dev/null
+PGPASSWORD=$DB_PASSWORD psql --pset pager=off -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "SELECT current_user, version();" 2>/dev/null
 
 if [ $? -eq 0 ]; then
     echo "   ✅ Autenticação OK"
@@ -53,7 +53,7 @@ fi
 
 # 4. Verificar tabelas
 echo "4. 🔍 Verificando estrutura do banco..."
-PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME << EOF
+PGPASSWORD=$DB_PASSWORD psql --pset pager=off -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME << EOF
 \echo '   📊 Tabelas existentes:'
 \dt
 
@@ -67,7 +67,7 @@ EOF
 # 5. Teste de inserção
 echo ""
 echo "5. 🔍 Testando inserção de dados..."
-PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME << EOF
+PGPASSWORD=$DB_PASSWORD psql --pset pager=off -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME << EOF
 -- Tentar inserir usuário de teste
 INSERT INTO users (name, email, password_hash) 
 VALUES ('Teste Conexao', 'teste.conexao@exemplo.com', 'hash_teste_123') 
