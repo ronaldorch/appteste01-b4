@@ -5,17 +5,25 @@ import { type NextRequest, NextResponse } from "next/server"
 
 const USE_DATABASE = process.env.DB_HOST && process.env.DB_HOST !== "localhost"
 
+// Simulação de armazenamento em memória (para desenvolvimento)
+const memoryUsers: any[] = [
+  {
+    id: 1,
+    name: "Usuário Demo",
+    email: "demo@exemplo.com",
+    password: "123456",
+  },
+  {
+    id: 2,
+    name: "Admin Sistema",
+    email: "admin@sistema.com",
+    password: "admin123",
+  },
+]
+
 export async function POST(request: NextRequest) {
   try {
-    console.log("🚀 === INÍCIO DO REGISTRO (DEBUG) ===")
-    console.log("📋 Variáveis de ambiente:")
-    console.log("   NODE_ENV:", process.env.NODE_ENV)
-    console.log("   DB_HOST:", process.env.DB_HOST)
-    console.log("   DB_PORT:", process.env.DB_PORT)
-    console.log("   DB_NAME:", process.env.DB_NAME)
-    console.log("   DB_USER:", process.env.DB_USER)
-    console.log("   DB_PASSWORD:", process.env.DB_PASSWORD ? "***SET***" : "***NOT SET***")
-    console.log("   USE_DATABASE:", USE_DATABASE)
+    console.log("📝 Iniciando registro de usuário...")
 
     const body = await request.json()
     const { name, email, password } = body
@@ -41,75 +49,60 @@ export async function POST(request: NextRequest) {
     }
 
     if (USE_DATABASE) {
-      console.log("🗄️ Usando banco de dados...")
+      console.log("🗄️ Tentando usar banco de dados...")
       try {
-        // Importar funções de debug
-        const { createUser, findUserByEmail } = await import("@/lib/auth-debug")
+        const { createUser, findUserByEmail } = await import("@/lib/auth")
 
-        console.log("🔍 Verificando se email já existe...")
         const existingUser = await findUserByEmail(email)
         if (existingUser) {
           console.log("❌ Email já existe no banco")
           return NextResponse.json({ error: "Este email já está cadastrado" }, { status: 409 })
         }
 
-        console.log("👤 Criando novo usuário...")
         const newUser = await createUser(name, email, password)
         if (!newUser) {
-          console.log("❌ Erro: createUser retornou null")
+          console.log("❌ Erro ao criar usuário no banco")
           return NextResponse.json({ error: "Erro ao criar usuário no banco de dados" }, { status: 500 })
         }
 
-        console.log("✅ Usuário criado com sucesso no banco!")
-        console.log("🚀 === FIM DO REGISTRO (SUCESSO) ===")
+        console.log("✅ Usuário criado no banco com sucesso")
         return NextResponse.json({
           message: "Usuário criado com sucesso",
           user: { id: newUser.id, name: newUser.name, email: newUser.email },
         })
       } catch (dbError) {
-        console.error("❌ Erro detalhado no banco:", {
-          message: dbError.message,
-          stack: dbError.stack,
-          code: dbError.code,
-        })
-        console.log("🔄 Tentando fallback para memória...")
-
-        // Fallback para dados em memória
-        const memoryUser = {
-          id: Date.now(),
-          name,
-          email,
-          created_at: new Date().toISOString(),
-        }
-
-        console.log("✅ Usuário criado na memória (fallback)")
-        return NextResponse.json({
-          message: "Usuário criado com sucesso (modo fallback)",
-          user: memoryUser,
-        })
+        console.error("❌ Erro no banco, usando fallback:", dbError)
+        // Continuar com dados em memória se houver erro no banco
       }
     }
 
     console.log("💾 Usando armazenamento em memória...")
-    const memoryUser = {
+
+    // Verificar se email já existe na memória
+    const existingUser = memoryUsers.find((u) => u.email === email)
+    if (existingUser) {
+      console.log("❌ Email já existe na memória")
+      return NextResponse.json({ error: "Este email já está cadastrado" }, { status: 409 })
+    }
+
+    // Criar novo usuário na memória
+    const newUser = {
       id: Date.now(),
       name,
       email,
+      password, // Em produção, use hash
       created_at: new Date().toISOString(),
     }
 
-    console.log("✅ Usuário criado na memória")
-    console.log("🚀 === FIM DO REGISTRO (MEMÓRIA) ===")
+    memoryUsers.push(newUser)
+    console.log("✅ Usuário criado na memória:", { id: newUser.id, name, email })
+
     return NextResponse.json({
       message: "Usuário criado com sucesso (modo demo)",
-      user: memoryUser,
+      user: { id: newUser.id, name: newUser.name, email: newUser.email },
     })
   } catch (error) {
-    console.error("❌ Erro geral no registro:", {
-      message: error.message,
-      stack: error.stack,
-    })
-    console.log("🚀 === FIM DO REGISTRO (ERRO) ===")
+    console.error("❌ Erro geral no registro:", error)
     return NextResponse.json(
       {
         error: "Erro interno do servidor",
@@ -118,4 +111,16 @@ export async function POST(request: NextRequest) {
       { status: 500 },
     )
   }
+}
+
+// Endpoint para listar usuários (apenas para debug)
+export async function GET() {
+  if (process.env.NODE_ENV !== "production") {
+    return NextResponse.json({
+      message: "Usuários em memória (apenas desenvolvimento)",
+      users: memoryUsers.map((u) => ({ id: u.id, name: u.name, email: u.email })),
+    })
+  }
+
+  return NextResponse.json({ error: "Não autorizado" }, { status: 401 })
 }
