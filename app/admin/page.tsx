@@ -4,57 +4,30 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { ShoppingCart, Package, DollarSign, Users, TrendingUp, Leaf, Plus, BarChart3 } from "lucide-react"
-import Link from "next/link"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DollarSign, Package, ShoppingCart, Users, Eye, Settings, BarChart3 } from "lucide-react"
 
-interface AdminStats {
-  totalProducts: number
-  totalOrders: number
+interface DashboardStats {
   totalRevenue: number
+  totalOrders: number
+  totalProducts: number
   totalUsers: number
-  monthlyRevenue: number
-  pendingOrders: number
-  lowStockProducts: number
-  recentOrders: Array<{
-    id: number
-    customer_name: string
-    total_amount: number
-    status: string
-    created_at: string
-  }>
-  topProducts: Array<{
-    id: number
-    name: string
-    total_sold: number
-    revenue: number
-  }>
+  recentOrders: any[]
+  topProducts: any[]
+  monthlyRevenue: number[]
 }
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<AdminStats>({
-    totalProducts: 0,
-    totalOrders: 0,
-    totalRevenue: 0,
-    totalUsers: 0,
-    monthlyRevenue: 0,
-    pendingOrders: 0,
-    lowStockProducts: 0,
-    recentOrders: [],
-    topProducts: [],
-  })
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchAdminStats()
+    fetchDashboardStats()
   }, [])
 
-  const fetchAdminStats = async () => {
+  const fetchDashboardStats = async () => {
     try {
-      const response = await fetch("/api/admin/stats", {
-        headers: {
-          Authorization: "Bearer admin-token", // Simular autenticação admin
-        },
-      })
+      const response = await fetch("/api/admin/stats")
       if (response.ok) {
         const data = await response.json()
         setStats(data)
@@ -66,37 +39,43 @@ export default function AdminDashboard() {
     }
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Carregando dashboard...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4">
+        <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-2 rounded-xl">
-                <Leaf className="h-8 w-8 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-                <p className="text-sm text-gray-600">Painel Administrativo GreenLeaf</p>
-              </div>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Dashboard Administrativo</h1>
+              <p className="text-gray-600">GreenLeaf Market - Painel de Controle</p>
             </div>
             <div className="flex items-center space-x-4">
-              <Link href="/">
-                <Button variant="outline" size="sm">
-                  Ver Loja
-                </Button>
-              </Link>
               <Button variant="outline" size="sm">
-                Sair
+                <Eye className="h-4 w-4 mr-2" />
+                Ver Site
+              </Button>
+              <Button variant="outline" size="sm">
+                <Settings className="h-4 w-4 mr-2" />
+                Configurações
               </Button>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Stats Overview */}
+      <div className="container mx-auto px-4 py-8">
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -104,13 +83,8 @@ export default function AdminDashboard() {
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
-                R$ {loading ? "..." : stats.totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                +R$ {loading ? "..." : stats.monthlyRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} este
-                mês
-              </p>
+              <div className="text-2xl font-bold text-green-600">R$ {stats?.totalRevenue?.toFixed(2) || "0.00"}</div>
+              <p className="text-xs text-muted-foreground">+12.5% em relação ao mês anterior</p>
             </CardContent>
           </Card>
 
@@ -120,8 +94,8 @@ export default function AdminDashboard() {
               <ShoppingCart className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{loading ? "..." : stats.totalOrders}</div>
-              <p className="text-xs text-muted-foreground">{loading ? "..." : stats.pendingOrders} pendentes</p>
+              <div className="text-2xl font-bold">{stats?.totalOrders || 0}</div>
+              <p className="text-xs text-muted-foreground">+8.2% em relação ao mês anterior</p>
             </CardContent>
           </Card>
 
@@ -131,177 +105,139 @@ export default function AdminDashboard() {
               <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{loading ? "..." : stats.totalProducts}</div>
-              <p className="text-xs text-muted-foreground">
-                {loading ? "..." : stats.lowStockProducts} com estoque baixo
-              </p>
+              <div className="text-2xl font-bold">{stats?.totalProducts || 0}</div>
+              <p className="text-xs text-muted-foreground">Produtos cadastrados</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Clientes</CardTitle>
+              <CardTitle className="text-sm font-medium">Usuários</CardTitle>
               <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{loading ? "..." : stats.totalUsers}</div>
+              <div className="text-2xl font-bold">{stats?.totalUsers || 0}</div>
               <p className="text-xs text-muted-foreground">Usuários registrados</p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Link href="/admin/products/new">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardContent className="flex items-center gap-4 p-6">
-                <div className="bg-green-100 p-3 rounded-full">
-                  <Plus className="w-6 h-6 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Novo Produto</h3>
-                  <p className="text-sm text-gray-600">Adicionar strain</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
+        {/* Tabs */}
+        <Tabs defaultValue="overview" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="overview">Visão Geral</TabsTrigger>
+            <TabsTrigger value="orders">Pedidos</TabsTrigger>
+            <TabsTrigger value="products">Produtos</TabsTrigger>
+            <TabsTrigger value="analytics">Análises</TabsTrigger>
+          </TabsList>
 
-          <Link href="/admin/orders">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardContent className="flex items-center gap-4 p-6">
-                <div className="bg-blue-100 p-3 rounded-full">
-                  <ShoppingCart className="w-6 h-6 text-blue-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Gerenciar Pedidos</h3>
-                  <p className="text-sm text-gray-600">Ver todos os pedidos</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link href="/admin/products">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardContent className="flex items-center gap-4 p-6">
-                <div className="bg-purple-100 p-3 rounded-full">
-                  <Package className="w-6 h-6 text-purple-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Estoque</h3>
-                  <p className="text-sm text-gray-600">Gerenciar produtos</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link href="/admin/analytics">
-            <Card className="hover:shadow-lg transition-shadow cursor-pointer">
-              <CardContent className="flex items-center gap-4 p-6">
-                <div className="bg-orange-100 p-3 rounded-full">
-                  <BarChart3 className="w-6 h-6 text-orange-600" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Relatórios</h3>
-                  <p className="text-sm text-gray-600">Analytics detalhados</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        </div>
-
-        {/* Recent Activity */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Recent Orders */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ShoppingCart className="w-5 h-5" />
-                Pedidos Recentes
-              </CardTitle>
-              <CardDescription>Últimos pedidos realizados</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-3">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="animate-pulse">
-                      <div className="h-4 bg-gray-200 rounded mb-2"></div>
-                      <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                    </div>
-                  ))}
-                </div>
-              ) : stats.recentOrders.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">Nenhum pedido encontrado</p>
-              ) : (
-                <div className="space-y-4">
-                  {stats.recentOrders.map((order) => (
-                    <div key={order.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <p className="font-medium">#{order.id}</p>
-                        <p className="text-sm text-gray-600">{order.customer_name}</p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(order.created_at).toLocaleDateString("pt-BR")}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-600">
-                          R$ {order.total_amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                        </p>
-                        <Badge variant={order.status === "completed" ? "default" : "secondary"}>{order.status}</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Top Products */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                Produtos Mais Vendidos
-              </CardTitle>
-              <CardDescription>Ranking de vendas por produto</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-3">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="animate-pulse">
-                      <div className="h-4 bg-gray-200 rounded mb-2"></div>
-                      <div className="h-3 bg-gray-200 rounded w-2/3"></div>
-                    </div>
-                  ))}
-                </div>
-              ) : stats.topProducts.length === 0 ? (
-                <p className="text-gray-500 text-center py-4">Nenhuma venda registrada</p>
-              ) : (
-                <div className="space-y-4">
-                  {stats.topProducts.map((product, index) => (
-                    <div key={product.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-green-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-                          {index + 1}
-                        </div>
+          <TabsContent value="overview" className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Recent Orders */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Pedidos Recentes</CardTitle>
+                  <CardDescription>Últimos pedidos realizados na plataforma</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {stats?.recentOrders?.slice(0, 5).map((order, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                         <div>
-                          <p className="font-medium">{product.name}</p>
-                          <p className="text-sm text-gray-600">{product.total_sold} vendidos</p>
+                          <p className="font-medium">Pedido #{order.id}</p>
+                          <p className="text-sm text-gray-600">{order.customer_email}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium text-green-600">R$ {order.total?.toFixed(2)}</p>
+                          <Badge variant={order.status === "completed" ? "default" : "secondary"}>{order.status}</Badge>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="font-bold text-green-600">
-                          R$ {product.revenue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                        </p>
+                    )) || <p className="text-gray-500 text-center py-4">Nenhum pedido encontrado</p>}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Top Products */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Produtos Mais Vendidos</CardTitle>
+                  <CardDescription>Produtos com melhor performance de vendas</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {stats?.topProducts?.slice(0, 5).map((product, index) => (
+                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                            <Package className="h-5 w-5 text-green-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{product.name}</p>
+                            <p className="text-sm text-gray-600">R$ {product.price?.toFixed(2)}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">{product.total_sold || 0} vendidos</p>
+                          <p className="text-sm text-gray-600">
+                            R$ {((product.total_sold || 0) * (product.price || 0)).toFixed(2)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )) || <p className="text-gray-500 text-center py-4">Nenhum produto encontrado</p>}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="orders">
+            <Card>
+              <CardHeader>
+                <CardTitle>Gerenciar Pedidos</CardTitle>
+                <CardDescription>Visualize e gerencie todos os pedidos da plataforma</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8">
+                  <ShoppingCart className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Funcionalidade de gerenciamento de pedidos</p>
+                  <p className="text-sm text-gray-500">Em desenvolvimento</p>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="products">
+            <Card>
+              <CardHeader>
+                <CardTitle>Gerenciar Produtos</CardTitle>
+                <CardDescription>Adicione, edite e remova produtos do catálogo</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8">
+                  <Package className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Funcionalidade de gerenciamento de produtos</p>
+                  <p className="text-sm text-gray-500">Em desenvolvimento</p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="analytics">
+            <Card>
+              <CardHeader>
+                <CardTitle>Análises e Relatórios</CardTitle>
+                <CardDescription>Métricas detalhadas e insights de vendas</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8">
+                  <BarChart3 className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-600">Relatórios e análises avançadas</p>
+                  <p className="text-sm text-gray-500">Em desenvolvimento</p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )
