@@ -1,367 +1,279 @@
 "use client"
 
-import type React from "react"
-
+import { useState, useEffect } from "react"
+import Link from "next/link"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import Link from "next/link"
-import Image from "next/image"
-import { useState, useEffect } from "react"
-import { Search, Filter, ShoppingCart, Grid, List, Leaf, Star, Shield } from "lucide-react"
-import { useSearchParams } from "next/navigation"
+import { ShoppingCart, Search, Filter, Leaf, Shield, Star } from "lucide-react"
 
 interface Product {
   id: number
   name: string
   description: string
   price: number
-  category_name: string
-  slug: string
+  stock_quantity: number
+  image_url: string
+  category: string
   featured: boolean
-  images: string[]
-  seller_name: string
+  slug: string
+}
+
+interface Category {
+  id: number
+  name: string
+  slug: string
 }
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCategory, setSelectedCategory] = useState("")
-  const [priceRange, setPriceRange] = useState({ min: "", max: "" })
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid")
-
-  const searchParams = useSearchParams()
-
-  const categories = [
-    { name: "Todos os Produtos", slug: "", icon: "🌿" },
-    { name: "Sementes Premium", slug: "sementes", icon: "🌱" },
-    { name: "Acessórios", slug: "acessorios", icon: "🔥" },
-    { name: "Extratos & Óleos", slug: "extratos", icon: "💧" },
-    { name: "Vaporizadores", slug: "vaporizadores", icon: "💨" },
-    { name: "Cultivo Indoor", slug: "cultivo", icon: "🏠" },
-  ]
+  const [selectedCategory, setSelectedCategory] = useState<string>("")
+  const [sortBy, setSortBy] = useState<string>("name")
 
   useEffect(() => {
-    const category = searchParams.get("category") || ""
-    const search = searchParams.get("search") || ""
+    const fetchData = async () => {
+      try {
+        // Buscar produtos
+        const productsRes = await fetch("/api/products")
+        if (productsRes.ok) {
+          const productsData = await productsRes.json()
+          setProducts(productsData)
+        }
 
-    setSelectedCategory(category)
-    setSearchTerm(search)
-
-    fetchProducts({ category, search })
-  }, [searchParams])
-
-  const fetchProducts = async (filters: any = {}) => {
-    setLoading(true)
-    try {
-      const params = new URLSearchParams()
-
-      if (filters.category || selectedCategory) {
-        params.append("category", filters.category || selectedCategory)
+        // Buscar categorias (simulado)
+        setCategories([
+          { id: 1, name: "Sementes Premium", slug: "sementes" },
+          { id: 2, name: "Acessórios", slug: "acessorios" },
+          { id: 3, name: "Extratos & Óleos", slug: "extratos" },
+          { id: 4, name: "Vaporizadores", slug: "vaporizadores" },
+          { id: 5, name: "Cultivo Indoor", slug: "cultivo" },
+        ])
+      } catch (error) {
+        console.error("Erro ao carregar produtos:", error)
+      } finally {
+        setLoading(false)
       }
-      if (filters.search || searchTerm) {
-        params.append("search", filters.search || searchTerm)
-      }
-      if (priceRange.min) {
-        params.append("minPrice", priceRange.min)
-      }
-      if (priceRange.max) {
-        params.append("maxPrice", priceRange.max)
-      }
-
-      const response = await fetch(`/api/products?${params.toString()}`)
-      const data = await response.json()
-      setProducts(data.products || [])
-    } catch (error) {
-      console.error("Erro ao carregar produtos:", error)
-    } finally {
-      setLoading(false)
     }
-  }
 
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault()
-    fetchProducts({ search: searchTerm })
-  }
+    fetchData()
+  }, [])
 
-  const handleCategoryChange = (category: string) => {
-    setSelectedCategory(category)
-    fetchProducts({ category })
-  }
+  // Filtrar produtos
+  const filteredProducts = products.filter((product) => {
+    const matchesSearch =
+      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      product.description.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesCategory = !selectedCategory || product.category === selectedCategory
+    return matchesSearch && matchesCategory
+  })
 
-  const handlePriceFilter = () => {
-    fetchProducts()
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-green-600 border-t-transparent mx-auto"></div>
-          <p className="mt-4 text-green-700 font-medium">Carregando produtos premium...</p>
-        </div>
-      </div>
-    )
-  }
+  // Ordenar produtos
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    switch (sortBy) {
+      case "price-asc":
+        return a.price - b.price
+      case "price-desc":
+        return b.price - a.price
+      case "name":
+        return a.name.localeCompare(b.name)
+      default:
+        return 0
+    }
+  })
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50">
-      {/* Header */}
-      <header className="bg-white/95 backdrop-blur-sm shadow-lg border-b border-green-100 sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <Link href="/" className="flex items-center gap-3">
-              <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-2 rounded-xl">
-                <Leaf className="w-8 h-8 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                  GreenLeaf Market
-                </h1>
-                <p className="text-xs text-green-600 font-medium">Premium Cannabis Marketplace</p>
-              </div>
+    <div className="min-h-screen bg-gradient-to-br from-green-50 via-emerald-50 to-teal-50">
+      {/* Header de Aviso */}
+      <div className="bg-gradient-to-r from-amber-500 to-orange-500 text-white py-2 px-4 text-center">
+        <div className="flex items-center justify-center gap-2 text-sm font-medium">
+          <Shield className="h-4 w-4" />🎮 PRODUTOS FICTÍCIOS - MARKETPLACE DE DEMONSTRAÇÃO - NENHUMA VENDA REAL
+          <Shield className="h-4 w-4" />
+        </div>
+      </div>
+
+      {/* Navigation */}
+      <nav className="bg-white/80 backdrop-blur-md border-b border-green-200 sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center h-16">
+            <Link href="/" className="flex items-center space-x-2">
+              <Leaf className="h-8 w-8 text-green-600" />
+              <span className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                GreenLeaf Market
+              </span>
+              <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+                🎮 Fictício
+              </Badge>
             </Link>
-
-            <form onSubmit={handleSearch} className="flex-1 max-w-md mx-8">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-green-400 w-4 h-4" />
-                <Input
-                  placeholder="Buscar produtos premium..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 border-green-200 focus:border-green-400 focus:ring-green-400"
-                />
-              </div>
-            </form>
-
-            <div className="flex items-center gap-4">
-              <Link href="/carrinho">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-green-200 text-green-700 hover:bg-green-50 bg-transparent"
-                >
-                  <ShoppingCart className="w-4 h-4 mr-2" />
-                  Carrinho
-                </Button>
+            <div className="flex items-center space-x-4">
+              <Link href="/" className="text-green-700 hover:text-green-900 font-medium">
+                Home
               </Link>
-              <Link href="/login">
-                <Button
-                  size="sm"
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-                >
-                  Entrar
-                </Button>
+              <Link href="/dashboard" className="text-green-700 hover:text-green-900 font-medium">
+                Dashboard
               </Link>
+              <Link href="/login" className="text-green-700 hover:text-green-900 font-medium">
+                Login
+              </Link>
+              <Button className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700">
+                <ShoppingCart className="h-4 w-4 mr-2" />
+                Carrinho
+              </Button>
             </div>
           </div>
         </div>
-      </header>
+      </nav>
 
-      {/* Warning Banner */}
-      <div className="bg-amber-100 border-l-4 border-amber-500 p-3">
-        <div className="container mx-auto">
-          <div className="flex items-center">
-            <Shield className="w-4 h-4 text-amber-600 mr-2" />
-            <p className="text-amber-800 text-sm font-medium">
-              🎮 Marketplace fictício para jogos - Nenhum produto real é vendido
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-gray-800 mb-4">Catálogo de Produtos</h1>
+          <p className="text-gray-600 text-lg">Explore nossa seleção premium de produtos de cannabis fictícios</p>
+          <div className="bg-red-100 border border-red-300 rounded-lg p-4 mt-4">
+            <p className="text-red-800 font-medium">
+              ⚠️ AVISO: Todos os produtos são FICTÍCIOS, criados apenas para demonstração. Nenhuma venda real é
+              realizada.
             </p>
           </div>
         </div>
-      </div>
 
-      <div className="container mx-auto px-4 py-8">
-        <div className="flex gap-8">
-          {/* Sidebar Filters */}
-          <div className="w-64 flex-shrink-0">
-            <Card className="border-green-100 shadow-lg">
-              <CardHeader className="bg-gradient-to-r from-green-50 to-emerald-50">
-                <CardTitle className="flex items-center gap-2 text-green-800">
-                  <Filter className="w-5 h-5" />
-                  Filtros Premium
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Categories */}
-                <div>
-                  <h3 className="font-semibold mb-3 text-green-800">Categorias</h3>
-                  <div className="space-y-2">
-                    {categories.map((category) => (
-                      <button
-                        key={category.slug}
-                        onClick={() => handleCategoryChange(category.slug)}
-                        className={`flex items-center gap-2 w-full text-left px-3 py-2 rounded-md text-sm transition-colors ${
-                          selectedCategory === category.slug
-                            ? "bg-green-100 text-green-700 border border-green-200"
-                            : "hover:bg-green-50 text-gray-700"
-                        }`}
-                      >
-                        <span>{category.icon}</span>
-                        {category.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Price Range */}
-                <div>
-                  <h3 className="font-semibold mb-3 text-green-800">Faixa de Preço</h3>
-                  <div className="space-y-2">
-                    <Input
-                      placeholder="Preço mínimo"
-                      type="number"
-                      value={priceRange.min}
-                      onChange={(e) => setPriceRange((prev) => ({ ...prev, min: e.target.value }))}
-                      className="border-green-200 focus:border-green-400"
-                    />
-                    <Input
-                      placeholder="Preço máximo"
-                      type="number"
-                      value={priceRange.max}
-                      onChange={(e) => setPriceRange((prev) => ({ ...prev, max: e.target.value }))}
-                      className="border-green-200 focus:border-green-400"
-                    />
-                    <Button
-                      onClick={handlePriceFilter}
-                      className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-                      size="sm"
-                    >
-                      Aplicar Filtro
-                    </Button>
-                  </div>
-                </div>
-
-                {/* Quality Badge */}
-                <div className="bg-gradient-to-r from-green-50 to-emerald-50 p-4 rounded-lg border border-green-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Shield className="w-5 h-5 text-green-600" />
-                    <span className="font-semibold text-green-800">Qualidade Premium</span>
-                  </div>
-                  <p className="text-sm text-green-700">Todos os produtos passam por rigoroso controle de qualidade</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Products */}
-          <div className="flex-1">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                  Produtos Premium
-                </h1>
-                <p className="text-green-700">{products.length} produtos encontrados</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={viewMode === "grid" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setViewMode("grid")}
-                  className={
-                    viewMode === "grid" ? "bg-green-600 hover:bg-green-700" : "border-green-200 text-green-700"
-                  }
-                >
-                  <Grid className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant={viewMode === "list" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setViewMode("list")}
-                  className={
-                    viewMode === "list" ? "bg-green-600 hover:bg-green-700" : "border-green-200 text-green-700"
-                  }
-                >
-                  <List className="w-4 h-4" />
-                </Button>
-              </div>
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow-sm border border-green-200 p-6 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <Input
+                placeholder="Buscar produtos..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 border-green-300 focus:border-green-500"
+              />
             </div>
 
-            {/* Products Grid/List */}
-            {products.length === 0 ? (
-              <Card className="border-green-100">
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <div className="text-6xl mb-4">🌿</div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Nenhum produto encontrado</h3>
-                  <p className="text-gray-600 mb-4">Tente ajustar seus filtros de busca</p>
-                  <Button
-                    onClick={() => {
-                      setSelectedCategory("")
-                      setSearchTerm("")
-                      setPriceRange({ min: "", max: "" })
-                      fetchProducts({})
-                    }}
-                    className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
-                  >
-                    Ver Todos os Produtos
-                  </Button>
-                </CardContent>
-              </Card>
-            ) : (
-              <div
-                className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}
-              >
-                {products.map((product) => (
-                  <Link key={product.id} href={`/produto/${product.slug}`}>
-                    <Card
-                      className={`hover:shadow-xl transition-all duration-300 cursor-pointer border-green-100 hover:border-green-300 group ${
-                        viewMode === "list" ? "flex" : ""
-                      }`}
-                    >
-                      <div
-                        className={`relative bg-gradient-to-br from-green-100 to-emerald-100 overflow-hidden ${
-                          viewMode === "list" ? "w-48 h-48 flex-shrink-0" : "aspect-square"
-                        }`}
-                      >
-                        <Image
-                          src={product.images[0] || "/placeholder.svg?height=300&width=300&text=🌿+Cannabis"}
-                          alt={product.name}
-                          fill
-                          className="object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                        {product.featured && (
-                          <Badge className="absolute top-3 left-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white">
-                            ⭐ Premium
-                          </Badge>
-                        )}
-                        <div className="absolute top-3 right-3">
-                          <Badge className="bg-white/90 text-green-700">🌿</Badge>
-                        </div>
-                      </div>
-                      <div className="flex-1">
-                        <CardHeader>
-                          <CardTitle className="text-lg line-clamp-2 group-hover:text-green-600 transition-colors">
-                            {product.name}
-                          </CardTitle>
-                          <CardDescription className="line-clamp-2">{product.description}</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                              R$ {product.price.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
-                            </span>
-                            <Badge variant="outline" className="border-green-200 text-green-700">
-                              {product.category_name}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <p className="text-sm text-gray-500">Por {product.seller_name}</p>
-                            <div className="flex items-center gap-1">
-                              <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                              <span className="text-sm text-gray-600">4.9</span>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </div>
-                    </Card>
-                  </Link>
-                ))}
-              </div>
-            )}
+            {/* Category Filter */}
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+            >
+              <option value="">Todas as Categorias</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.name}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+
+            {/* Sort */}
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+            >
+              <option value="name">Ordenar por Nome</option>
+              <option value="price-asc">Menor Preço</option>
+              <option value="price-desc">Maior Preço</option>
+            </select>
+
+            {/* Results Count */}
+            <div className="flex items-center text-gray-600">
+              <Filter className="h-4 w-4 mr-2" />
+              {sortedProducts.length} produtos encontrados
+            </div>
           </div>
         </div>
+
+        {/* Products Grid */}
+        {loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[...Array(12)].map((_, i) => (
+              <Card key={i} className="animate-pulse">
+                <div className="h-64 bg-gray-200 rounded-t-lg"></div>
+                <CardContent className="p-4">
+                  <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-2/3 mb-2"></div>
+                  <div className="h-6 bg-gray-200 rounded w-1/2"></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : sortedProducts.length === 0 ? (
+          <div className="text-center py-12">
+            <div className="text-gray-400 mb-4">
+              <Search className="h-16 w-16 mx-auto" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-600 mb-2">Nenhum produto encontrado</h3>
+            <p className="text-gray-500">Tente ajustar os filtros ou termos de busca</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {sortedProducts.map((product) => (
+              <Card
+                key={product.id}
+                className="group hover:shadow-xl transition-all duration-300 border-green-200 hover:border-green-300"
+              >
+                <div className="relative overflow-hidden rounded-t-lg">
+                  <img
+                    src={product.image_url || "/placeholder.svg"}
+                    alt={product.name}
+                    className="w-full h-64 object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <div className="absolute top-3 left-3 flex flex-col gap-2">
+                    {product.featured && (
+                      <Badge className="bg-green-600 text-white">
+                        <Star className="h-3 w-3 mr-1" />
+                        Destaque
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="bg-white/90 text-gray-700">
+                      🎮 Fictício
+                    </Badge>
+                  </div>
+                  <div className="absolute top-3 right-3">
+                    <Badge variant="outline" className="bg-white/90 text-green-700 border-green-300">
+                      {product.stock_quantity} em estoque
+                    </Badge>
+                  </div>
+                </div>
+                <CardContent className="p-4">
+                  <div className="mb-2">
+                    <Badge variant="outline" className="text-xs text-green-700 border-green-300">
+                      {product.category}
+                    </Badge>
+                  </div>
+                  <h3 className="font-semibold text-gray-800 mb-2 group-hover:text-green-600 transition-colors line-clamp-2">
+                    {product.name}
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-3 line-clamp-2">{product.description}</p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xl font-bold text-green-600">R$ {product.price.toFixed(2)}</span>
+                    <Button
+                      size="sm"
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700"
+                      disabled={product.stock_quantity === 0}
+                    >
+                      <ShoppingCart className="h-4 w-4 mr-1" />
+                      {product.stock_quantity === 0 ? "Esgotado" : "Adicionar"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Load More Button */}
+        {sortedProducts.length > 0 && (
+          <div className="text-center mt-12">
+            <Button variant="outline" className="border-green-300 text-green-700 hover:bg-green-50 bg-transparent">
+              Carregar Mais Produtos
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )
