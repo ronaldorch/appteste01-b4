@@ -2,13 +2,13 @@
 
 # 🚀 SCRIPT MASTER - SETUP COMPLETO GREENLEAF CANNABIS MARKETPLACE
 # Este script faz TUDO: git pull, banco, dados, configuração, deploy
-# Autor: Sistema Automatizado
+# Versão: 2.0 - Com detecção automática de problemas
 # Data: $(date)
 
 set -e  # Para na primeira falha
 
 echo "🌿 ======================================================="
-echo "🚀 GREENLEAF CANNABIS MARKETPLACE - SETUP MASTER"
+echo "🚀 GREENLEAF CANNABIS MARKETPLACE - SETUP MASTER v2.0"
 echo "🌿 ======================================================="
 echo ""
 echo "⚠️  ATENÇÃO: Este script fará o setup COMPLETO do sistema!"
@@ -22,13 +22,18 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "🚀 Iniciando setup master..."
+echo "🚀 Iniciando setup master v2.0..."
 echo "=========================================="
 
 # Variáveis
 PROJECT_DIR="/var/www/azure-site"
 BACKUP_DIR="/var/backups/azure-site-$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="/var/log/greenleaf-setup.log"
+
+# Criar diretório de log se não existir
+sudo mkdir -p "$(dirname "$LOG_FILE")"
+sudo touch "$LOG_FILE"
+sudo chmod 666 "$LOG_FILE"
 
 # Função de log
 log() {
@@ -42,97 +47,172 @@ error_exit() {
     exit 1
 }
 
-log "🚀 Iniciando setup master do GreenLeaf Cannabis Marketplace"
+log "🚀 Iniciando setup master v2.0 do GreenLeaf Cannabis Marketplace"
 
-# 1. BACKUP DO SISTEMA ATUAL
-echo "1️⃣ Fazendo backup do sistema atual..."
+# 1. VERIFICAR USUÁRIO E PERMISSÕES
+echo "1️⃣ Verificando permissões e usuário..."
+if [[ $EUID -eq 0 ]]; then
+    log "⚠️ Executando como root - ajustando configurações"
+    SUDO_CMD=""
+else
+    log "ℹ️ Executando como usuário normal"
+    SUDO_CMD="sudo"
+fi
+
+# 2. BACKUP DO SISTEMA ATUAL
+echo "2️⃣ Fazendo backup do sistema atual..."
 if [ -d "$PROJECT_DIR" ]; then
     log "📦 Criando backup em $BACKUP_DIR"
-    sudo mkdir -p "$BACKUP_DIR"
-    sudo cp -r "$PROJECT_DIR" "$BACKUP_DIR/" 2>/dev/null || true
+    $SUDO_CMD mkdir -p "$BACKUP_DIR"
+    $SUDO_CMD cp -r "$PROJECT_DIR" "$BACKUP_DIR/" 2>/dev/null || true
     log "✅ Backup criado com sucesso"
 else
     log "ℹ️ Diretório do projeto não existe, pulando backup"
 fi
 
-# 2. ATUALIZAR SISTEMA
-echo "2️⃣ Atualizando sistema operacional..."
+# 3. ATUALIZAR SISTEMA
+echo "3️⃣ Atualizando sistema operacional..."
 log "🔄 Atualizando pacotes do sistema"
-sudo apt update -qq
-sudo apt upgrade -y -qq
+$SUDO_CMD apt update -qq
+$SUDO_CMD apt upgrade -y -qq
 log "✅ Sistema atualizado"
 
-# 3. INSTALAR DEPENDÊNCIAS
-echo "3️⃣ Instalando dependências necessárias..."
-log "📦 Instalando Node.js, PostgreSQL, Nginx, PM2"
+# 4. INSTALAR DEPENDÊNCIAS BÁSICAS
+echo "4️⃣ Instalando dependências básicas..."
+log "📦 Instalando dependências essenciais"
 
-# Node.js 18+
+$SUDO_CMD apt install -y \
+    curl \
+    wget \
+    git \
+    unzip \
+    build-essential \
+    software-properties-common \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    lsb-release
+
+log "✅ Dependências básicas instaladas"
+
+# 5. INSTALAR NODE.JS
+echo "5️⃣ Instalando Node.js..."
+log "📦 Configurando Node.js 18+"
+
 if ! command -v node &> /dev/null || [[ $(node -v | cut -d'v' -f2 | cut -d'.' -f1) -lt 18 ]]; then
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt-get install -y nodejs
+    log "🔄 Instalando Node.js 18"
+    curl -fsSL https://deb.nodesource.com/setup_18.x | $SUDO_CMD -E bash -
+    $SUDO_CMD apt-get install -y nodejs
+else
+    log "✅ Node.js já instalado: $(node -v)"
 fi
 
-# PostgreSQL
-if ! command -v psql &> /dev/null; then
-    sudo apt install -y postgresql postgresql-contrib
-    sudo systemctl start postgresql
-    sudo systemctl enable postgresql
-fi
-
-# Nginx
-if ! command -v nginx &> /dev/null; then
-    sudo apt install -y nginx
-fi
-
-# PM2
+# Instalar PM2 globalmente
 if ! command -v pm2 &> /dev/null; then
-    sudo npm install -g pm2
+    log "📦 Instalando PM2"
+    $SUDO_CMD npm install -g pm2
+else
+    log "✅ PM2 já instalado"
 fi
 
-# Outras dependências
-sudo apt install -y git curl wget unzip build-essential
+log "✅ Node.js e PM2 configurados"
 
-log "✅ Dependências instaladas"
-
-# 4. CONFIGURAR POSTGRESQL
-echo "4️⃣ Configurando PostgreSQL..."
+# 6. INSTALAR E CONFIGURAR POSTGRESQL
+echo "6️⃣ Instalando e configurando PostgreSQL..."
 log "🗄️ Configurando banco de dados PostgreSQL"
+
+# Instalar PostgreSQL
+if ! command -v psql &> /dev/null; then
+    log "📦 Instalando PostgreSQL"
+    $SUDO_CMD apt install -y postgresql postgresql-contrib
+    $SUDO_CMD systemctl start postgresql
+    $SUDO_CMD systemctl enable postgresql
+else
+    log "✅ PostgreSQL já instalado"
+    $SUDO_CMD systemctl start postgresql || true
+fi
+
+# Aguardar PostgreSQL inicializar
+sleep 5
 
 # Gerar senha aleatória para o banco
 DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
 
-# Configurar PostgreSQL
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS azure_site;" 2>/dev/null || true
-sudo -u postgres psql -c "DROP USER IF EXISTS app_user;" 2>/dev/null || true
-sudo -u postgres psql -c "CREATE USER app_user WITH PASSWORD '$DB_PASSWORD';"
-sudo -u postgres psql -c "CREATE DATABASE azure_site OWNER app_user;"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE azure_site TO app_user;"
+# Configurar PostgreSQL como usuário postgres
+log "🔧 Configurando usuário e banco de dados"
 
-# Configurar pg_hba.conf para permitir conexões locais
-sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/" /etc/postgresql/*/main/postgresql.conf
-echo "local   azure_site      app_user                                md5" | sudo tee -a /etc/postgresql/*/main/pg_hba.conf
-sudo systemctl restart postgresql
+$SUDO_CMD -u postgres psql -c "DROP DATABASE IF EXISTS azure_site;" 2>/dev/null || true
+$SUDO_CMD -u postgres psql -c "DROP USER IF EXISTS app_user;" 2>/dev/null || true
+$SUDO_CMD -u postgres psql -c "CREATE USER app_user WITH PASSWORD '$DB_PASSWORD';"
+$SUDO_CMD -u postgres psql -c "CREATE DATABASE azure_site OWNER app_user;"
+$SUDO_CMD -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE azure_site TO app_user;"
+$SUDO_CMD -u postgres psql -c "ALTER USER app_user CREATEDB;"
+
+# Configurar PostgreSQL para aceitar conexões locais
+log "🔧 Configurando acesso ao PostgreSQL"
+
+# Encontrar versão do PostgreSQL
+PG_VERSION=$($SUDO_CMD -u postgres psql -t -c "SELECT version();" | grep -oP '\d+\.\d+' | head -1)
+PG_CONFIG_DIR="/etc/postgresql/$PG_VERSION/main"
+
+if [ ! -d "$PG_CONFIG_DIR" ]; then
+    # Tentar encontrar diretório de configuração
+    PG_CONFIG_DIR=$(find /etc/postgresql -name "postgresql.conf" -type f | head -1 | xargs dirname)
+fi
+
+if [ -d "$PG_CONFIG_DIR" ]; then
+    # Configurar postgresql.conf
+    $SUDO_CMD sed -i "s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/" "$PG_CONFIG_DIR/postgresql.conf"
+    
+    # Configurar pg_hba.conf
+    if ! grep -q "local.*azure_site.*app_user.*md5" "$PG_CONFIG_DIR/pg_hba.conf"; then
+        echo "local   azure_site      app_user                                md5" | $SUDO_CMD tee -a "$PG_CONFIG_DIR/pg_hba.conf"
+    fi
+    
+    $SUDO_CMD systemctl restart postgresql
+    log "✅ PostgreSQL configurado e reiniciado"
+else
+    log "⚠️ Diretório de configuração do PostgreSQL não encontrado, usando configuração padrão"
+fi
 
 log "✅ PostgreSQL configurado - Senha: $DB_PASSWORD"
 
-# 5. CLONAR/ATUALIZAR CÓDIGO
-echo "5️⃣ Atualizando código do projeto..."
-log "📥 Fazendo git pull do projeto"
+# 7. INSTALAR NGINX
+echo "7️⃣ Instalando Nginx..."
+log "🌐 Configurando servidor web Nginx"
 
-if [ -d "$PROJECT_DIR/.git" ]; then
-    cd "$PROJECT_DIR"
-    git stash push -m "Auto-stash before master setup $(date)" 2>/dev/null || true
-    git pull origin main || git pull origin master || error_exit "Falha no git pull"
-    log "✅ Código atualizado via git pull"
+if ! command -v nginx &> /dev/null; then
+    $SUDO_CMD apt install -y nginx
+    $SUDO_CMD systemctl start nginx
+    $SUDO_CMD systemctl enable nginx
 else
-    log "ℹ️ Repositório git não encontrado, assumindo código já está presente"
+    log "✅ Nginx já instalado"
 fi
 
-# Garantir que estamos no diretório correto
-cd "$PROJECT_DIR" || error_exit "Diretório do projeto não encontrado"
+log "✅ Nginx instalado e configurado"
 
-# 6. INSTALAR DEPENDÊNCIAS NPM
-echo "6️⃣ Instalando dependências do Node.js..."
+# 8. CONFIGURAR PROJETO
+echo "8️⃣ Configurando projeto..."
+log "📁 Configurando diretório do projeto"
+
+# Garantir que estamos no diretório correto
+if [ ! -d "$PROJECT_DIR" ]; then
+    error_exit "Diretório do projeto não encontrado: $PROJECT_DIR"
+fi
+
+cd "$PROJECT_DIR" || error_exit "Não foi possível acessar o diretório do projeto"
+
+# Verificar se é um repositório git
+if [ -d ".git" ]; then
+    log "📥 Atualizando código via git"
+    git stash push -m "Auto-stash before master setup $(date)" 2>/dev/null || true
+    git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || log "⚠️ Não foi possível fazer git pull"
+else
+    log "ℹ️ Não é um repositório git, usando código local"
+fi
+
+# 9. INSTALAR DEPENDÊNCIAS NPM
+echo "9️⃣ Instalando dependências do Node.js..."
 log "📦 Executando npm install"
 
 # Limpar cache e node_modules
@@ -143,8 +223,8 @@ npm cache clean --force 2>/dev/null || true
 npm install || error_exit "Falha na instalação das dependências npm"
 log "✅ Dependências npm instaladas"
 
-# 7. CONFIGURAR VARIÁVEIS DE AMBIENTE
-echo "7️⃣ Configurando variáveis de ambiente..."
+# 10. CONFIGURAR VARIÁVEIS DE AMBIENTE
+echo "🔟 Configurando variáveis de ambiente..."
 log "⚙️ Criando arquivo .env.local"
 
 cat > .env.local << EOF
@@ -167,9 +247,12 @@ EOF
 chmod 600 .env.local
 log "✅ Variáveis de ambiente configuradas"
 
-# 8. CRIAR ESTRUTURA DO BANCO
-echo "8️⃣ Criando estrutura do banco de dados..."
+# 11. CRIAR ESTRUTURA DO BANCO
+echo "1️⃣1️⃣ Criando estrutura do banco de dados..."
 log "🗄️ Executando scripts de criação das tabelas"
+
+# Aguardar PostgreSQL estar pronto
+sleep 3
 
 # Script de criação das tabelas
 PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site << 'EOF'
@@ -207,6 +290,7 @@ CREATE TABLE IF NOT EXISTS products (
     user_id INTEGER REFERENCES users(id),
     slug VARCHAR(255) UNIQUE NOT NULL,
     featured BOOLEAN DEFAULT false,
+    image_url VARCHAR(500),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -265,68 +349,101 @@ CREATE INDEX IF NOT EXISTS idx_orders_user ON orders(user_id);
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_cart_user ON cart_items(user_id);
 
+-- Inserir dados iniciais
+-- Categorias
+INSERT INTO categories (name, description, slug) VALUES 
+('Flores', 'Flores de cannabis premium', 'flores'),
+('Extrações', 'Extratos e concentrados', 'extracoes')
+ON CONFLICT (slug) DO NOTHING;
+
+-- Usuários
+INSERT INTO users (email, password, name, role) VALUES 
+('admin@greenleaf.com', '$2b$10$rQZ8kJQy5F5FJ5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5', 'Administrador', 'admin'),
+('demo@exemplo.com', '$2b$10$rQZ8kJQy5F5FJ5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5', 'Usuário Demo', 'user')
+ON CONFLICT (email) DO NOTHING;
+
+-- Produtos de Flores
+INSERT INTO products (name, description, price, stock_quantity, category_id, slug, featured, image_url) VALUES 
+('Colombian Gold', 'Strain clássica colombiana com efeitos energizantes e sabor terroso.', 45.00, 100, 1, 'colombian-gold', true, '/placeholder.svg?height=300&width=300'),
+('Califa Kush', 'Híbrida californiana premium com alto THC e relaxamento profundo.', 55.00, 75, 1, 'califa-kush', true, '/placeholder.svg?height=300&width=300'),
+('Purple Haze', 'Sativa icônica com tons roxos e efeitos criativos.', 50.00, 80, 1, 'purple-haze', false, '/placeholder.svg?height=300&width=300'),
+('OG Kush', 'Clássica californiana com aroma cítrico e efeitos balanceados.', 48.00, 90, 1, 'og-kush', true, '/placeholder.svg?height=300&width=300'),
+('White Widow', 'Híbrida holandesa famosa mundialmente por sua potência.', 52.00, 60, 1, 'white-widow', false, '/placeholder.svg?height=300&width=300')
+ON CONFLICT (slug) DO NOTHING;
+
+-- Produtos de Extrações
+INSERT INTO products (name, description, price, stock_quantity, category_id, slug, featured, image_url) VALUES 
+('Live Resin Premium', 'Extrato fresco com terpenos preservados e sabor intenso.', 80.00, 30, 2, 'live-resin-premium', true, '/placeholder.svg?height=300&width=300'),
+('Shatter Gold', 'Concentrado cristalino com alta pureza e potência.', 70.00, 25, 2, 'shatter-gold', false, '/placeholder.svg?height=300&width=300'),
+('Rosin Artesanal', 'Extrato sem solventes, prensado artesanalmente.', 90.00, 20, 2, 'rosin-artesanal', true, '/placeholder.svg?height=300&width=300'),
+('Wax Premium', 'Concentrado cremoso com textura única e sabor marcante.', 65.00, 35, 2, 'wax-premium', false, '/placeholder.svg?height=300&width=300'),
+('Hash Tradicional', 'Haxixe tradicional com métodos ancestrais de produção.', 60.00, 40, 2, 'hash-tradicional', false, '/placeholder.svg?height=300&width=300')
+ON CONFLICT (slug) DO NOTHING;
+
+SELECT 'Estrutura do banco e dados iniciais criados com sucesso!' as status;
 EOF
 
 if [ $? -eq 0 ]; then
-    log "✅ Estrutura do banco criada com sucesso"
+    log "✅ Estrutura do banco e dados criados com sucesso"
 else
     error_exit "Falha na criação da estrutura do banco"
 fi
 
-# 9. INSERIR DADOS INICIAIS
-echo "9️⃣ Inserindo dados iniciais..."
-log "📊 Inserindo usuários, categorias e produtos"
-
-PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site -f scripts/cannabis-products.sql
-
-if [ $? -eq 0 ]; then
-    log "✅ Dados iniciais inseridos com sucesso"
-else
-    error_exit "Falha na inserção dos dados iniciais"
-fi
-
-# Inserir usuário administrador
-PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site << EOF
--- Inserir usuário admin (senha: admin123)
-INSERT INTO users (email, password, name, role) VALUES 
-('admin@greenleaf.com', '\$2b\$10\$rQZ8kJQy5F5FJ5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5', 'Administrador', 'admin'),
-('demo@exemplo.com', '\$2b\$10\$rQZ8kJQy5F5FJ5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5', 'Usuário Demo', 'user')
-ON CONFLICT (email) DO NOTHING;
-EOF
-
-# 10. BUILD DA APLICAÇÃO
-echo "🔟 Fazendo build da aplicação..."
+# 12. BUILD DA APLICAÇÃO
+echo "1️⃣2️⃣ Fazendo build da aplicação..."
 log "🏗️ Executando npm run build"
 
 npm run build || error_exit "Falha no build da aplicação"
 log "✅ Build concluído com sucesso"
 
-# 11. CONFIGURAR PM2
-echo "1️⃣1️⃣ Configurando PM2..."
+# 13. CONFIGURAR PM2
+echo "1️⃣3️⃣ Configurando PM2..."
 log "⚙️ Configurando gerenciador de processos PM2"
 
 # Parar processos existentes
 pm2 stop all 2>/dev/null || true
 pm2 delete all 2>/dev/null || true
 
+# Criar arquivo de configuração do PM2 se não existir
+if [ ! -f "ecosystem.config.js" ]; then
+    cat > ecosystem.config.js << 'EOF'
+module.exports = {
+  apps: [{
+    name: 'greenleaf-market',
+    script: 'npm',
+    args: 'start',
+    cwd: '/var/www/azure-site',
+    instances: 1,
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1G',
+    env: {
+      NODE_ENV: 'production',
+      PORT: 3000
+    }
+  }]
+}
+EOF
+fi
+
 # Iniciar aplicação com PM2
-pm2 start ecosystem.config.js || pm2 start npm --name "greenleaf-market" -- start
+pm2 start ecosystem.config.js
 
 # Configurar inicialização automática
-pm2 startup
+pm2 startup | grep -E '^sudo' | bash || true
 pm2 save
 
 log "✅ PM2 configurado e aplicação iniciada"
 
-# 12. CONFIGURAR NGINX
-echo "1️⃣2️⃣ Configurando Nginx..."
+# 14. CONFIGURAR NGINX
+echo "1️⃣4️⃣ Configurando Nginx..."
 log "🌐 Configurando servidor web Nginx"
 
 # Obter IP público
 PUBLIC_IP=$(curl -s ifconfig.me 2>/dev/null || curl -s ipinfo.io/ip 2>/dev/null || echo "localhost")
 
 # Configurar Nginx
-sudo tee /etc/nginx/sites-available/greenleaf-market > /dev/null << EOF
+$SUDO_CMD tee /etc/nginx/sites-available/greenleaf-market > /dev/null << EOF
 server {
     listen 80;
     server_name $PUBLIC_IP localhost _;
@@ -382,30 +499,32 @@ server {
 EOF
 
 # Ativar site e remover default
-sudo ln -sf /etc/nginx/sites-available/greenleaf-market /etc/nginx/sites-enabled/
-sudo rm -f /etc/nginx/sites-enabled/default
+$SUDO_CMD ln -sf /etc/nginx/sites-available/greenleaf-market /etc/nginx/sites-enabled/
+$SUDO_CMD rm -f /etc/nginx/sites-enabled/default
 
 # Testar configuração do Nginx
-sudo nginx -t || error_exit "Configuração do Nginx inválida"
+$SUDO_CMD nginx -t || error_exit "Configuração do Nginx inválida"
 
 # Reiniciar Nginx
-sudo systemctl restart nginx
-sudo systemctl enable nginx
+$SUDO_CMD systemctl restart nginx
+$SUDO_CMD systemctl enable nginx
 
 log "✅ Nginx configurado e reiniciado"
 
-# 13. TESTES FINAIS
-echo "1️⃣3️⃣ Executando testes finais..."
+# 15. TESTES FINAIS
+echo "1️⃣5️⃣ Executando testes finais..."
 log "🧪 Testando aplicação e serviços"
 
 # Aguardar aplicação inicializar
-sleep 10
+echo "⏳ Aguardando aplicação inicializar..."
+sleep 15
 
 # Testar aplicação direta
 if curl -f http://localhost:3000 > /dev/null 2>&1; then
     log "✅ Aplicação (porta 3000): OK"
 else
-    log "❌ Aplicação (porta 3000): ERRO"
+    log "❌ Aplicação (porta 3000): ERRO - Verificando logs..."
+    pm2 logs greenleaf-market --lines 10 || true
 fi
 
 # Testar via Nginx
@@ -417,40 +536,41 @@ fi
 
 # Testar banco de dados
 if PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site -c "SELECT COUNT(*) FROM products;" > /dev/null 2>&1; then
-    log "✅ Banco de dados: OK"
+    PRODUCT_COUNT=$(PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site -t -c "SELECT COUNT(*) FROM products;" | xargs)
+    log "✅ Banco de dados: OK - $PRODUCT_COUNT produtos cadastrados"
 else
     log "❌ Banco de dados: ERRO"
 fi
 
-# 14. CONFIGURAR FIREWALL
-echo "1️⃣4️⃣ Configurando firewall..."
+# 16. CONFIGURAR FIREWALL
+echo "1️⃣6️⃣ Configurando firewall..."
 log "🔥 Configurando regras de firewall"
 
 # Configurar UFW se disponível
 if command -v ufw &> /dev/null; then
-    sudo ufw --force enable
-    sudo ufw allow 22/tcp    # SSH
-    sudo ufw allow 80/tcp    # HTTP
-    sudo ufw allow 443/tcp   # HTTPS
-    sudo ufw allow 3000/tcp  # App (temporário)
+    $SUDO_CMD ufw --force enable
+    $SUDO_CMD ufw allow 22/tcp    # SSH
+    $SUDO_CMD ufw allow 80/tcp    # HTTP
+    $SUDO_CMD ufw allow 443/tcp   # HTTPS
+    $SUDO_CMD ufw allow 3000/tcp  # App (temporário)
     log "✅ Firewall configurado"
 fi
 
-# 15. CRIAR SCRIPTS DE MANUTENÇÃO
-echo "1️⃣5️⃣ Criando scripts de manutenção..."
+# 17. CRIAR SCRIPTS DE MANUTENÇÃO
+echo "1️⃣7️⃣ Criando scripts de manutenção..."
 log "🛠️ Criando scripts de manutenção"
 
 # Script de status
-cat > /usr/local/bin/greenleaf-status << 'EOF'
+$SUDO_CMD tee /usr/local/bin/greenleaf-status > /dev/null << EOF
 #!/bin/bash
 echo "🌿 GreenLeaf Market - Status do Sistema"
 echo "======================================"
-echo "📅 Data: $(date)"
+echo "📅 Data: \$(date)"
 echo ""
 echo "🔧 Serviços:"
-echo "  PM2: $(pm2 list | grep -c online) processos online"
-echo "  Nginx: $(systemctl is-active nginx)"
-echo "  PostgreSQL: $(systemctl is-active postgresql)"
+echo "  PM2: \$(pm2 list | grep -c online) processos online"
+echo "  Nginx: \$(systemctl is-active nginx)"
+echo "  PostgreSQL: \$(systemctl is-active postgresql)"
 echo ""
 echo "🌐 Conectividade:"
 curl -s -o /dev/null -w "  App (3000): %{http_code}\n" http://localhost:3000
@@ -461,10 +581,10 @@ PGPASSWORD=$DB_PASSWORD psql -h localhost -U app_user -d azure_site -t -c "SELEC
 PGPASSWORD=$DB_PASSWORD psql -h localhost -U app_user -d azure_site -t -c "SELECT 'Usuários: ' || COUNT(*) FROM users;"
 EOF
 
-chmod +x /usr/local/bin/greenleaf-status
+$SUDO_CMD chmod +x /usr/local/bin/greenleaf-status
 
 # Script de backup
-cat > /usr/local/bin/greenleaf-backup << EOF
+$SUDO_CMD tee /usr/local/bin/greenleaf-backup > /dev/null << EOF
 #!/bin/bash
 BACKUP_DIR="/var/backups/greenleaf-\$(date +%Y%m%d-%H%M%S)"
 mkdir -p "\$BACKUP_DIR"
@@ -473,11 +593,11 @@ PGPASSWORD=$DB_PASSWORD pg_dump -h localhost -U app_user azure_site > "\$BACKUP_
 echo "Backup criado em: \$BACKUP_DIR"
 EOF
 
-chmod +x /usr/local/bin/greenleaf-backup
+$SUDO_CMD chmod +x /usr/local/bin/greenleaf-backup
 
 log "✅ Scripts de manutenção criados"
 
-# 16. FINALIZAÇÃO
+# 18. FINALIZAÇÃO
 echo ""
 echo "🎉 ========================================="
 echo "✅ SETUP MASTER CONCLUÍDO COM SUCESSO!"
