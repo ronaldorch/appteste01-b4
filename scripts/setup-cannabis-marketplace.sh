@@ -1,86 +1,87 @@
 #!/bin/bash
 
-echo "🌿 Configurando GreenLeaf Market - Cannabis Marketplace..."
-echo "======================================================"
+echo "🌿 Configurando GreenLeaf Cannabis Marketplace..."
 
-cd /var/www/azure-site
-
-# 1. Verificar se o banco está configurado
-if [ ! -f ".env.local" ]; then
-    echo "❌ Configure o banco primeiro com: ./scripts/setup-database-connection.sh"
-    exit 1
+# Verificar se o PostgreSQL está rodando
+if ! pgrep -x "postgres" > /dev/null; then
+    echo "❌ PostgreSQL não está rodando. Iniciando..."
+    sudo systemctl start postgresql
+    sleep 3
 fi
 
-# 2. Carregar variáveis
-export $(grep -v '^#' .env.local | xargs)
-
-# 3. Executar script de tabelas do marketplace
-echo "🗄️ Criando tabelas do marketplace..."
-PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f scripts/marketplace-tables.sql
-
-if [ $? -eq 0 ]; then
-    echo "✅ Tabelas do marketplace criadas!"
-else
-    echo "❌ Erro ao criar tabelas!"
-    exit 1
+# Verificar variáveis de ambiente
+if [ -z "$DB_HOST" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASSWORD" ] || [ -z "$DB_NAME" ]; then
+    echo "⚠️  Configurando variáveis de ambiente padrão..."
+    export DB_HOST="localhost"
+    export DB_USER="postgres"
+    export DB_PASSWORD="postgres"
+    export DB_NAME="greenleaf_db"
+    export DB_PORT="5432"
 fi
 
-# 4. Inserir produtos de cannabis
-echo "🌱 Inserindo produtos de cannabis fictícios..."
+echo "📊 Executando script SQL para produtos de cannabis..."
+
+# Executar o script SQL
 PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -f scripts/cannabis-products.sql
 
 if [ $? -eq 0 ]; then
-    echo "✅ Produtos de cannabis inseridos!"
+    echo "✅ Produtos de cannabis inseridos com sucesso!"
 else
-    echo "❌ Erro ao inserir produtos!"
+    echo "❌ Erro ao inserir produtos. Verificando conexão..."
     exit 1
 fi
 
-# 5. Parar aplicação
-echo "🔄 Parando aplicação..."
-pm2 stop azure-site
+# Instalar dependências se necessário
+if [ ! -d "node_modules" ]; then
+    echo "📦 Instalando dependências..."
+    npm install
+fi
 
-# 6. Build
-echo "🏗️ Fazendo build..."
+# Construir o projeto
+echo "🔨 Construindo o projeto..."
 npm run build
 
-if [ $? -ne 0 ]; then
-    echo "❌ Erro no build!"
+if [ $? -eq 0 ]; then
+    echo "✅ Build concluído com sucesso!"
+else
+    echo "❌ Erro no build. Verificando..."
     exit 1
 fi
 
-# 7. Reiniciar
-echo "🚀 Reiniciando aplicação..."
-pm2 start azure-site
-sleep 5
+# Iniciar o servidor
+echo "🚀 Iniciando GreenLeaf Cannabis Marketplace..."
+echo ""
+echo "🌿 =================================="
+echo "   GREENLEAF CANNABIS MARKETPLACE"
+echo "🌿 =================================="
+echo ""
+echo "✅ Produtos disponíveis:"
+echo "   🌿 Flores: Colombian Gold, Califa Kush, Purple Haze"
+echo "   💧 Extrações: Live Resin, Shatter, Rosin, Wax"
+echo ""
+echo "🔗 URLs disponíveis:"
+echo "   📱 Loja: http://localhost:3000"
+echo "   🛍️  Produtos: http://localhost:3000/produtos"
+echo "   👨‍💼 Admin: http://localhost:3000/admin"
+echo ""
+echo "🎯 Categorias:"
+echo "   🌿 Flores: /produtos?category=flores"
+echo "   💧 Extrações: /produtos?category=extracoes"
+echo ""
 
-# 8. Teste
-PUBLIC_IP=$(curl -s ifconfig.me 2>/dev/null || echo "localhost")
+# Iniciar com PM2 se disponível, senão usar npm
+if command -v pm2 &> /dev/null; then
+    echo "🔄 Reiniciando com PM2..."
+    pm2 delete greenleaf-app 2>/dev/null || true
+    pm2 start npm --name "greenleaf-app" -- start
+    pm2 save
+    echo "✅ GreenLeaf rodando com PM2!"
+else
+    echo "🔄 Iniciando com npm..."
+    npm start
+fi
 
 echo ""
-echo "🎉 ======================================="
-echo "✅ GREENLEAF MARKET CONFIGURADO!"
-echo "🎉 ======================================="
+echo "🌿 GreenLeaf Cannabis Marketplace está rodando!"
+echo "   Acesse: http://localhost:3000"
 echo ""
-echo "🌿 Acesse o GreenLeaf Market:"
-echo "   Loja: http://$PUBLIC_IP"
-echo "   Produtos: http://$PUBLIC_IP/produtos"
-echo "   Dashboard: http://$PUBLIC_IP/dashboard"
-echo ""
-echo "📋 Credenciais:"
-echo "   Email: demo@exemplo.com"
-echo "   Senha: 123456"
-echo ""
-echo "🌱 Produtos disponíveis:"
-echo "   ✅ Sementes Premium (White Widow, OG Kush, etc)"
-echo "   ✅ Acessórios (Grinders, Bongs, Papéis)"
-echo "   ✅ Extratos & Óleos (CBD, Hash, Rosin)"
-echo "   ✅ Vaporizadores (Mighty+, Arizer, etc)"
-echo "   ✅ Cultivo Indoor (LED, Grow Tent, etc)"
-echo ""
-echo "⚠️  IMPORTANTE:"
-echo "   🎮 Este é um marketplace FICTÍCIO"
-echo "   🚫 Criado apenas para demonstração/jogos"
-echo "   💻 Nenhum produto real é vendido"
-echo ""
-echo "🔧 Para monitorar: pm2 logs azure-site"
