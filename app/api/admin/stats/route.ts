@@ -1,9 +1,11 @@
+export const runtime = "nodejs"
+
 import { type NextRequest, NextResponse } from "next/server"
 import { query } from "@/lib/database"
 
 export async function GET(request: NextRequest) {
   try {
-    // Total Revenue
+    // Total Revenue - usando 'total' em vez de 'total_amount'
     const revenueResult = await query(`
       SELECT COALESCE(SUM(total), 0) as total_revenue 
       FROM orders 
