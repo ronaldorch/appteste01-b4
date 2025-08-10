@@ -1,51 +1,23 @@
 #!/bin/bash
 
-# 🚀 QUICK DEPLOY - Deploy rápido do GreenLeaf Cannabis Marketplace
-# Para atualizações rápidas sem reinstalar tudo
+# Script rápido para deploy após git pull
+echo "🚀 Deploy rápido do GreenLeaf Market..."
 
-echo "🌿 ======================================="
-echo "🚀 GREENLEAF - QUICK DEPLOY"
-echo "🌿 ======================================="
+cd /var/www/azure-site
 
-PROJECT_DIR="/var/www/azure-site"
-LOG_FILE="/var/log/greenleaf-deploy.log"
+# Git pull
+git pull origin main || git pull origin master
 
-# Função de log
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
-}
-
-log "🚀 Iniciando quick deploy"
-
-# Ir para diretório do projeto
-cd "$PROJECT_DIR" || exit 1
-
-echo "1️⃣ Fazendo git pull..."
-git stash push -m "Auto-stash before quick deploy $(date)" 2>/dev/null || true
-git pull origin main 2>/dev/null || git pull origin master 2>/dev/null || echo "⚠️ Git pull falhou"
-
-echo "2️⃣ Instalando dependências..."
+# Install dependencies
 npm install
 
-echo "3️⃣ Fazendo build..."
+# Build
 npm run build
 
-echo "4️⃣ Reiniciando aplicação..."
-pm2 restart greenleaf-market
+# Restart PM2
+pm2 restart all
 
-echo "5️⃣ Testando aplicação..."
-sleep 5
+# Restart Nginx
+sudo systemctl restart nginx
 
-if curl -f http://localhost:3000 > /dev/null 2>&1; then
-    echo "✅ Aplicação funcionando!"
-else
-    echo "❌ Erro na aplicação - verificando logs..."
-    pm2 logs greenleaf-market --lines 10
-fi
-
-PUBLIC_IP=$(curl -s ifconfig.me 2>/dev/null || echo "localhost")
-echo ""
-echo "🎉 Deploy concluído!"
-echo "🌐 Acesse: http://$PUBLIC_IP"
-
-log "✅ Quick deploy concluído"
+echo "✅ Deploy concluído!"

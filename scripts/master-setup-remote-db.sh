@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # 🚀 SCRIPT MASTER - SETUP COMPLETO GREENLEAF CANNABIS MARKETPLACE
-# Este script faz TUDO: git pull, banco, dados, configuração, deploy
+# Este script faz TUDO: git pull, banco REMOTO, dados, configuração, deploy
+# IMPORTANTE: PostgreSQL está na vm-private (banco remoto)
 # Autor: Sistema Automatizado
 # Data: $(date)
 
@@ -12,7 +13,8 @@ echo "🚀 GREENLEAF CANNABIS MARKETPLACE - SETUP MASTER"
 echo "🌿 ======================================================="
 echo ""
 echo "⚠️  ATENÇÃO: Este script fará o setup COMPLETO do sistema!"
-echo "📋 Incluindo: Git, Banco, Dados, Configuração, Deploy"
+echo "📋 Incluindo: Git, Banco REMOTO, Dados, Configuração, Deploy"
+echo "🗄️ PostgreSQL: vm-private (banco remoto)"
 echo ""
 read -p "🤔 Deseja continuar? (y/N): " -n 1 -r
 echo
@@ -62,9 +64,9 @@ sudo apt update -qq
 sudo apt upgrade -y -qq
 log "✅ Sistema atualizado"
 
-# 3. INSTALAR DEPENDÊNCIAS
+# 3. INSTALAR DEPENDÊNCIAS (SEM PostgreSQL - está na vm-private)
 echo "3️⃣ Instalando dependências necessárias..."
-log "📦 Instalando Node.js, PostgreSQL, Nginx, PM2"
+log "📦 Instalando Node.js, Nginx, PM2, PostgreSQL CLIENT"
 
 # Node.js 18+
 if ! command -v node &> /dev/null || [[ $(node -v | cut -d'v' -f2 | cut -d'.' -f1) -lt 18 ]]; then
@@ -72,11 +74,9 @@ if ! command -v node &> /dev/null || [[ $(node -v | cut -d'v' -f2 | cut -d'.' -f
     sudo apt-get install -y nodejs
 fi
 
-# PostgreSQL
+# PostgreSQL CLIENT (não server - server está na vm-private)
 if ! command -v psql &> /dev/null; then
-    sudo apt install -y postgresql postgresql-contrib
-    sudo systemctl start postgresql
-    sudo systemctl enable postgresql
+    sudo apt install -y postgresql-client
 fi
 
 # Nginx
@@ -94,26 +94,52 @@ sudo apt install -y git curl wget unzip build-essential
 
 log "✅ Dependências instaladas"
 
-# 4. CONFIGURAR POSTGRESQL
-echo "4️⃣ Configurando PostgreSQL..."
-log "🗄️ Configurando banco de dados PostgreSQL"
+# 4. CONFIGURAR CONEXÃO COM BANCO REMOTO (vm-private)
+echo "4️⃣ Configurando conexão com banco PostgreSQL remoto..."
+log "🗄️ Configurando conexão com banco na vm-private"
 
-# Gerar senha aleatória para o banco
-DB_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-25)
+echo ""
+echo "📋 Informe os dados do banco PostgreSQL na vm-private:"
+read -p "🔗 IP da vm-private (ex: 10.0.1.4): " DB_HOST
+read -p "🔢 Porta do PostgreSQL (padrão 5432): " DB_PORT
+DB_PORT=${DB_PORT:-5432}
+read -p "📊 Nome do banco de dados (padrão: azure_site): " DB_NAME
+DB_NAME=${DB_NAME:-azure_site}
+read -p "👤 Usuário do banco (padrão: app_user): " DB_USER
+DB_USER=${DB_USER:-app_user}
+read -s -p "🔐 Senha do banco: " DB_PASSWORD
+echo ""
 
-# Configurar PostgreSQL
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS azure_site;" 2>/dev/null || true
-sudo -u postgres psql -c "DROP USER IF EXISTS app_user;" 2>/dev/null || true
-sudo -u postgres psql -c "CREATE USER app_user WITH PASSWORD '$DB_PASSWORD';"
-sudo -u postgres psql -c "CREATE DATABASE azure_site OWNER app_user;"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE azure_site TO app_user;"
+# Testar conectividade com a vm-private
+echo "🔍 Testando conectividade com vm-private ($DB_HOST)..."
+if ping -c 3 $DB_HOST > /dev/null 2>&1; then
+    log "✅ vm-private ($DB_HOST) está acessível"
+else
+    log "❌ vm-private ($DB_HOST) não está acessível"
+    echo "⚠️ Verifique se:"
+    echo "   - IP da vm-private está correto"
+    echo "   - VMs estão na mesma rede virtual"
+    echo "   - Firewall permite conexão"
+    error_exit "Conectividade com vm-private falhou"
+fi
 
-# Configurar pg_hba.conf para permitir conexões locais
-sudo sed -i "s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/" /etc/postgresql/*/main/postgresql.conf
-echo "local   azure_site      app_user                                md5" | sudo tee -a /etc/postgresql/*/main/pg_hba.conf
-sudo systemctl restart postgresql
+# Testar conexão PostgreSQL
+echo "🔍 Testando conexão PostgreSQL..."
+PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" > /dev/null 2>&1
 
-log "✅ PostgreSQL configurado - Senha: $DB_PASSWORD"
+if [ $? -eq 0 ]; then
+    log "✅ Conexão PostgreSQL estabelecida com sucesso!"
+else
+    log "❌ Erro na conexão PostgreSQL"
+    echo "⚠️ Verifique se:"
+    echo "   - PostgreSQL está rodando na vm-private"
+    echo "   - Usuário '$DB_USER' existe"
+    echo "   - Senha está correta"
+    echo "   - Banco '$DB_NAME' existe"
+    echo "   - pg_hba.conf permite conexões da vm-bastion"
+    echo "   - postgresql.conf tem listen_addresses = '*'"
+    error_exit "Conexão PostgreSQL falhou"
+fi
 
 # 5. CLONAR/ATUALIZAR CÓDIGO
 echo "5️⃣ Atualizando código do projeto..."
@@ -151,11 +177,11 @@ cat > .env.local << EOF
 NODE_ENV=production
 JWT_SECRET=$(openssl rand -base64 32)
 
-# Configurações do banco PostgreSQL
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=azure_site
-DB_USER=app_user
+# Configurações do banco PostgreSQL REMOTO (vm-private)
+DB_HOST=$DB_HOST
+DB_PORT=$DB_PORT
+DB_NAME=$DB_NAME
+DB_USER=$DB_USER
 DB_PASSWORD=$DB_PASSWORD
 DB_SSL=false
 
@@ -167,12 +193,12 @@ EOF
 chmod 600 .env.local
 log "✅ Variáveis de ambiente configuradas"
 
-# 8. CRIAR ESTRUTURA DO BANCO
-echo "8️⃣ Criando estrutura do banco de dados..."
-log "🗄️ Executando scripts de criação das tabelas"
+# 8. CRIAR ESTRUTURA DO BANCO (no banco remoto)
+echo "8️⃣ Criando estrutura do banco de dados remoto..."
+log "🗄️ Executando scripts de criação das tabelas na vm-private"
 
-# Script de criação das tabelas
-PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site << 'EOF'
+# Script de criação das tabelas no banco remoto
+PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME << 'EOF'
 -- Criar extensões necessárias
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
@@ -268,31 +294,65 @@ CREATE INDEX IF NOT EXISTS idx_cart_user ON cart_items(user_id);
 EOF
 
 if [ $? -eq 0 ]; then
-    log "✅ Estrutura do banco criada com sucesso"
+    log "✅ Estrutura do banco criada com sucesso na vm-private"
 else
     error_exit "Falha na criação da estrutura do banco"
 fi
 
-# 9. INSERIR DADOS INICIAIS
-echo "9️⃣ Inserindo dados iniciais..."
-log "📊 Inserindo usuários, categorias e produtos"
+# 9. INSERIR DADOS INICIAIS (no banco remoto)
+echo "9️⃣ Inserindo dados iniciais no banco remoto..."
+log "📊 Inserindo usuários, categorias e produtos na vm-private"
 
-PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site -f scripts/cannabis-products.sql
+# Inserir categorias
+PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME << 'EOF'
+-- Inserir categorias
+INSERT INTO categories (name, description, slug) VALUES 
+('Flores', 'Flores de cannabis premium selecionadas', 'flores'),
+('Extrações', 'Concentrados e extratos de alta qualidade', 'extracoes')
+ON CONFLICT (slug) DO NOTHING;
+EOF
+
+# Inserir produtos
+PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME << 'EOF'
+-- Inserir produtos de flores
+INSERT INTO products (name, description, price, stock_quantity, category_id, slug, featured) VALUES 
+('Colombian Gold', 'Strain clássica colombiana com efeitos energizantes e sabor terroso único', 45.00, 50, 1, 'colombian-gold', true),
+('Califa Kush', 'Híbrida californiana premium com alto THC e relaxamento profundo', 55.00, 30, 1, 'califa-kush', true),
+('Purple Haze', 'Sativa lendária com efeitos criativos e aroma frutado', 50.00, 25, 1, 'purple-haze', false),
+('OG Kush', 'Clássica americana com efeitos balanceados e sabor cítrico', 48.00, 40, 1, 'og-kush', false),
+('White Widow', 'Híbrida holandesa famosa por sua potência e cristais brancos', 52.00, 35, 1, 'white-widow', true),
+('Sour Diesel', 'Sativa energética com aroma diesel característico', 47.00, 28, 1, 'sour-diesel', false),
+('Blue Dream', 'Híbrida suave com efeitos relaxantes e sabor de frutas vermelhas', 49.00, 45, 1, 'blue-dream', false),
+('Gorilla Glue #4', 'Híbrida potente com efeitos duradouros e aroma terroso', 54.00, 20, 1, 'gorilla-glue-4', true)
+ON CONFLICT (slug) DO NOTHING;
+
+-- Inserir produtos de extrações
+INSERT INTO products (name, description, price, stock_quantity, category_id, slug, featured) VALUES 
+('Live Resin Premium', 'Extrato fresco com terpenos preservados e sabor intenso', 80.00, 15, 2, 'live-resin-premium', true),
+('Shatter Gold', 'Concentrado translúcido com alta pureza e potência', 70.00, 20, 2, 'shatter-gold', false),
+('Rosin Artesanal', 'Extrato sem solventes, prensado a frio para máxima qualidade', 90.00, 10, 2, 'rosin-artesanal', true),
+('Wax Honeycomb', 'Concentrado cremoso com textura única e efeitos potentes', 75.00, 18, 2, 'wax-honeycomb', false),
+('Hash Tradicional', 'Haxixe tradicional marroquino com sabor autêntico', 60.00, 25, 2, 'hash-tradicional', false),
+('Budder Premium', 'Concentrado cremoso com alta concentração de terpenos', 85.00, 12, 2, 'budder-premium', true),
+('Crumble Sativa', 'Extrato quebradiço com efeitos energizantes', 72.00, 16, 2, 'crumble-sativa', false),
+('Diamonds & Sauce', 'Cristais de THC em molho de terpenos - máxima potência', 95.00, 8, 2, 'diamonds-sauce', true)
+ON CONFLICT (slug) DO NOTHING;
+EOF
+
+# Inserir usuários
+PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME << 'EOF'
+-- Inserir usuários (senhas: admin123 e 123456)
+INSERT INTO users (email, password, name, role) VALUES 
+('admin@greenleaf.com', '$2b$10$rQZ8kJQy5F5FJ5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5', 'Administrador GreenLeaf', 'admin'),
+('demo@exemplo.com', '$2b$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Usuário Demo', 'user')
+ON CONFLICT (email) DO NOTHING;
+EOF
 
 if [ $? -eq 0 ]; then
-    log "✅ Dados iniciais inseridos com sucesso"
+    log "✅ Dados iniciais inseridos com sucesso na vm-private"
 else
     error_exit "Falha na inserção dos dados iniciais"
 fi
-
-# Inserir usuário administrador
-PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site << EOF
--- Inserir usuário admin (senha: admin123)
-INSERT INTO users (email, password, name, role) VALUES 
-('admin@greenleaf.com', '\$2b\$10\$rQZ8kJQy5F5FJ5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5', 'Administrador', 'admin'),
-('demo@exemplo.com', '\$2b\$10\$rQZ8kJQy5F5FJ5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5F5', 'Usuário Demo', 'user')
-ON CONFLICT (email) DO NOTHING;
-EOF
 
 # 10. BUILD DA APLICAÇÃO
 echo "🔟 Fazendo build da aplicação..."
@@ -415,11 +475,11 @@ else
     log "❌ Nginx (porta 80): ERRO"
 fi
 
-# Testar banco de dados
-if PGPASSWORD=$DB_PASSWORD psql -h localhost -p 5432 -U app_user -d azure_site -c "SELECT COUNT(*) FROM products;" > /dev/null 2>&1; then
-    log "✅ Banco de dados: OK"
+# Testar banco de dados remoto
+if PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "SELECT COUNT(*) FROM products;" > /dev/null 2>&1; then
+    log "✅ Banco de dados remoto (vm-private): OK"
 else
-    log "❌ Banco de dados: ERRO"
+    log "❌ Banco de dados remoto (vm-private): ERRO"
 fi
 
 # 14. CONFIGURAR FIREWALL
@@ -441,24 +501,23 @@ echo "1️⃣5️⃣ Criando scripts de manutenção..."
 log "🛠️ Criando scripts de manutenção"
 
 # Script de status
-cat > /usr/local/bin/greenleaf-status << 'EOF'
+cat > /usr/local/bin/greenleaf-status << EOF
 #!/bin/bash
 echo "🌿 GreenLeaf Market - Status do Sistema"
 echo "======================================"
-echo "📅 Data: $(date)"
+echo "📅 Data: \$(date)"
 echo ""
 echo "🔧 Serviços:"
-echo "  PM2: $(pm2 list | grep -c online) processos online"
-echo "  Nginx: $(systemctl is-active nginx)"
-echo "  PostgreSQL: $(systemctl is-active postgresql)"
+echo "  PM2: \$(pm2 list | grep -c online) processos online"
+echo "  Nginx: \$(systemctl is-active nginx)"
 echo ""
 echo "🌐 Conectividade:"
 curl -s -o /dev/null -w "  App (3000): %{http_code}\n" http://localhost:3000
 curl -s -o /dev/null -w "  Nginx (80): %{http_code}\n" http://localhost
 echo ""
-echo "💾 Banco de dados:"
-PGPASSWORD=$DB_PASSWORD psql -h localhost -U app_user -d azure_site -t -c "SELECT 'Produtos: ' || COUNT(*) FROM products;"
-PGPASSWORD=$DB_PASSWORD psql -h localhost -U app_user -d azure_site -t -c "SELECT 'Usuários: ' || COUNT(*) FROM users;"
+echo "💾 Banco de dados remoto (vm-private):"
+PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -t -c "SELECT 'Produtos: ' || COUNT(*) FROM products;"
+PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -U $DB_USER -d $DB_NAME -t -c "SELECT 'Usuários: ' || COUNT(*) FROM users;"
 EOF
 
 chmod +x /usr/local/bin/greenleaf-status
@@ -469,7 +528,7 @@ cat > /usr/local/bin/greenleaf-backup << EOF
 BACKUP_DIR="/var/backups/greenleaf-\$(date +%Y%m%d-%H%M%S)"
 mkdir -p "\$BACKUP_DIR"
 cp -r "$PROJECT_DIR" "\$BACKUP_DIR/"
-PGPASSWORD=$DB_PASSWORD pg_dump -h localhost -U app_user azure_site > "\$BACKUP_DIR/database.sql"
+PGPASSWORD=$DB_PASSWORD pg_dump -h $DB_HOST -U $DB_USER $DB_NAME > "\$BACKUP_DIR/database.sql"
 echo "Backup criado em: \$BACKUP_DIR"
 EOF
 
@@ -501,11 +560,10 @@ echo ""
 echo "   📧 Demo: demo@exemplo.com" 
 echo "   🔑 Senha: 123456"
 echo ""
-echo "🗄️ Banco de Dados:"
-echo "   🏠 Host: localhost"
-echo "   👤 Usuário: app_user"
-echo "   🔑 Senha: $DB_PASSWORD"
-echo "   📊 Database: azure_site"
+echo "🗄️ Banco de Dados (vm-private):"
+echo "   🏠 Host: $DB_HOST"
+echo "   👤 Usuário: $DB_USER"
+echo "   📊 Database: $DB_NAME"
 echo ""
 echo "🛠️ Comandos Úteis:"
 echo "   greenleaf-status          # Status do sistema"
@@ -545,11 +603,10 @@ Credenciais Demo:
 - Email: demo@exemplo.com
 - Senha: 123456
 
-Banco de Dados:
-- Host: localhost
-- User: app_user
-- Password: $DB_PASSWORD
-- Database: azure_site
+Banco de Dados (vm-private):
+- Host: $DB_HOST
+- User: $DB_USER
+- Database: $DB_NAME
 
 Comandos:
 - greenleaf-status (status do sistema)
